@@ -1,0 +1,1 @@
+Total time to run simulation 542.263000 seconds, final location 108932.597183 -51269.627035

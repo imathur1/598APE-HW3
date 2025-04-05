@@ -1,8 +1,12 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<math.h>
-
+#include <gperftools/profiler.h>
 #include <sys/time.h>
+
+#ifndef PROFILE
+   #define PROFILE 0
+#endif
 
 float tdiff(struct timeval *start, struct timeval *end) {
   return (end->tv_sec-start->tv_sec) + 1e-6*(end->tv_usec-start->tv_usec);
@@ -76,6 +80,10 @@ int main(int argc, const char** argv){
    dt = 0.001;
    G = 6.6743;
 
+   #if PROFILE
+      ProfilerStart("my_profile.prof");
+   #endif
+
    Planet* planets = (Planet*)malloc(sizeof(Planet) * nplanets);
    for (int i=0; i<nplanets; i++) {
       planets[i].mass = randomDouble() * 10 + 0.2;
@@ -92,6 +100,11 @@ int main(int argc, const char** argv){
       // printf("x=%f y=%f vx=%f vy=%f\n", planets[nplanets-1].x, planets[nplanets-1].y, planets[nplanets-1].vx, planets[nplanets-1].vy);
    }
    gettimeofday(&end, NULL);
+
+   #if PROFILE
+      ProfilerStop();
+   #endif
+
    printf("Total time to run simulation %0.6f seconds, final location %f %f\n", tdiff(&start, &end), planets[nplanets-1].x, planets[nplanets-1].y);
 
    return 0;   
