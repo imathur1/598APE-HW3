@@ -3,6 +3,7 @@
 #include<math.h>
 #include <gperftools/profiler.h>
 #include <sys/time.h>
+#include <string.h>
 
 #ifndef PROFILE
    #define PROFILE 0
@@ -43,32 +44,33 @@ int timesteps;
 double dt;
 double G;
 
-Planet* next(Planet* planets) {
+Planet* next(Planet* planets, double* massProducts) {
    Planet* nextplanets = (Planet*)malloc(sizeof(Planet) * nplanets);
-   for (int i=0; i<nplanets; i++) {
-      nextplanets[i].vx = planets[i].vx;
-      nextplanets[i].vy = planets[i].vy;
-      nextplanets[i].mass = planets[i].mass;
-      nextplanets[i].x = planets[i].x;
-      nextplanets[i].y = planets[i].y;
-   }
+   memcpy(nextplanets, planets, nplanets * sizeof(Planet));
 
    for (int i=0; i<nplanets; i++) {
-      for (int j=0; j<nplanets; j++) {
+      for (int j=i; j<nplanets; j++) {
          double dx = planets[j].x - planets[i].x;
          double dy = planets[j].y - planets[i].y;
          double distSqr = dx*dx + dy*dy + 0.0001;
-         double invDist = planets[i].mass * planets[j].mass / sqrt(distSqr);
+         double invDist = massProducts[i * nplanets + j] / sqrt(distSqr);
          double invDist3 = invDist * invDist * invDist;
          nextplanets[i].vx += dt * dx * invDist3;
          nextplanets[i].vy += dt * dy * invDist3;
+         if (j != i) {
+            nextplanets[j].vx += dt * -dx * invDist3;
+            nextplanets[j].vy += dt * -dy * invDist3;
+         }
       }
       nextplanets[i].x += dt * nextplanets[i].vx;
       nextplanets[i].y += dt * nextplanets[i].vy;
    }
+ 
    free(planets);
    return nextplanets;
 }
+
+
 
 int main(int argc, const char** argv){
    if (argc < 2) {
@@ -80,23 +82,37 @@ int main(int argc, const char** argv){
    dt = 0.001;
    G = 6.6743;
 
-   #if PROFILE
-      ProfilerStart("my_profile.prof");
-   #endif
-
    Planet* planets = (Planet*)malloc(sizeof(Planet) * nplanets);
+   double scale = pow(1 + nplanets, 0.4);
    for (int i=0; i<nplanets; i++) {
       planets[i].mass = randomDouble() * 10 + 0.2;
-      planets[i].x = ( randomDouble() - 0.5 ) * 100 * pow(1 + nplanets, 0.4);
-      planets[i].y = ( randomDouble() - 0.5 ) * 100 * pow(1 + nplanets, 0.4);
+      planets[i].x = ( randomDouble() - 0.5 ) * 100 * scale;
+      planets[i].y = ( randomDouble() - 0.5 ) * 100 * scale;
       planets[i].vx = randomDouble() * 5 - 2.5;
       planets[i].vy = randomDouble() * 5 - 2.5;
    }
 
+   #if PROFILE
+      ProfilerStart("my_profile.prof");
+   #endif
+
    struct timeval start, end;
    gettimeofday(&start, NULL);
+
+   // Precompute the mass products since mass does not change over time.
+   double* massProducts = (double*)malloc(sizeof(double) * nplanets * nplanets);
+   for (int i = 0; i < nplanets; i++) {
+      for (int j = i; j < nplanets; j++) {
+         massProducts[i * nplanets + j] = planets[i].mass * planets[j].mass;
+      }
+   }
+
    for (int i=0; i<timesteps; i++) {
-      planets = next(planets);
+      // next(planets, nextplanets);
+      // Planet* temp = planets;
+      // planets = nextplanets;
+      // nextplanets = temp;
+      planets = next(planets, massProducts);
       // printf("x=%f y=%f vx=%f vy=%f\n", planets[nplanets-1].x, planets[nplanets-1].y, planets[nplanets-1].vx, planets[nplanets-1].vy);
    }
    gettimeofday(&end, NULL);
