@@ -60,14 +60,19 @@ int main(int argc, const char** argv){
    dt = 0.001;
    G = 6.6743;
 
-   Planet* planets = (Planet*)malloc(sizeof(Planet) * nplanets);
+   // Allocate two blocks of memory for double buffering
+   Planet* planets[2];
+   planets[0] = (Planet*)malloc(sizeof(Planet) * nplanets);
+   planets[1] = (Planet*)malloc(sizeof(Planet) * nplanets);
+   
+   // Initialize first buffer
    double scale = pow(1 + nplanets, 0.4);
    for (int i=0; i<nplanets; i++) {
-      planets[i].mass = randomDouble() * 10 + 0.2;
-      planets[i].x = ( randomDouble() - 0.5 ) * 100 * scale;
-      planets[i].y = ( randomDouble() - 0.5 ) * 100 * scale;
-      planets[i].vx = randomDouble() * 5 - 2.5;
-      planets[i].vy = randomDouble() * 5 - 2.5;
+      planets[0][i].mass = randomDouble() * 10 + 0.2;
+      planets[0][i].x = ( randomDouble() - 0.5 ) * 100 * scale;
+      planets[0][i].y = ( randomDouble() - 0.5 ) * 100 * scale;
+      planets[0][i].vx = randomDouble() * 5 - 2.5;
+      planets[0][i].vy = randomDouble() * 5 - 2.5;
    }
 
    #if PROFILE
@@ -77,46 +82,47 @@ int main(int argc, const char** argv){
    struct timeval start, end;
    gettimeofday(&start, NULL);
 
-   // Precompute the mass products since mass does not change over time.
+   // Precompute the mass products since mass does not change over time
    double* massProducts = (double*)malloc(sizeof(double) * nplanets * nplanets);
    for (int i = 0; i < nplanets; i++) {
       for (int j = i; j < nplanets; j++) {
-         double massProduct = planets[i].mass * planets[j].mass;
+         double massProduct = planets[0][i].mass * planets[0][j].mass;
          massProducts[i * nplanets + j] = massProduct * massProduct * massProduct;
       }
    }
 
    for (int t=0; t<timesteps; ++t) {
-      Planet* nextplanets = (Planet*)malloc(sizeof(Planet) * nplanets);
-      memcpy(nextplanets, planets, nplanets * sizeof(Planet));
+      int current = t % 2;
+      int next = (t + 1) % 2;
+
+      // Copy current state to next buffer
+      memcpy(planets[next], planets[current], nplanets * sizeof(Planet));
 
       for (int i=0; i<nplanets; ++i) {
          for (int j=i; j<nplanets; ++j) {
-            double dx = planets[j].x - planets[i].x;
-            double dy = planets[j].y - planets[i].y;
+            double dx = planets[current][j].x - planets[current][i].x;
+            double dy = planets[current][j].y - planets[current][i].y;
             double distSqr = dx*dx + dy*dy + 0.0001;
             double invDist3 = massProducts[i * nplanets + j] / (distSqr * sqrt(distSqr));
-            nextplanets[i].vx += dt * dx * invDist3;
-            nextplanets[i].vy += dt * dy * invDist3;
+            
+            planets[next][i].vx += dt * dx * invDist3;
+            planets[next][i].vy += dt * dy * invDist3;
             if (j != i) {
-               nextplanets[j].vx += dt * -dx * invDist3;
-               nextplanets[j].vy += dt * -dy * invDist3;
+               planets[next][j].vx += dt * -dx * invDist3;
+               planets[next][j].vy += dt * -dy * invDist3;
             }
          }
-         nextplanets[i].x += dt * nextplanets[i].vx;
-         nextplanets[i].y += dt * nextplanets[i].vy;
+         planets[next][i].x += dt * planets[next][i].vx;
+         planets[next][i].y += dt * planets[next][i].vy;
       }
-
-      free(planets);
-      planets = nextplanets;
 
       #if PRINT_STEPS
          if (t < N) {
             printf("x: %0.32g y: %0.32g vx: %0.32g vy: %0.32g\n", 
-                   planets[nplanets-1].x, 
-                   planets[nplanets-1].y, 
-                   planets[nplanets-1].vx, 
-                   planets[nplanets-1].vy);
+                   planets[next][nplanets-1].x, 
+                   planets[next][nplanets-1].y, 
+                   planets[next][nplanets-1].vx, 
+                   planets[next][nplanets-1].vy);
          }
       #endif
    }
@@ -126,7 +132,17 @@ int main(int argc, const char** argv){
       ProfilerStop();
    #endif
 
-   printf("Total time to run simulation %0.6f seconds, final location %f %f\n", tdiff(&start, &end), planets[nplanets-1].x, planets[nplanets-1].y);
+   // The final result is in the buffer that was last written to
+   int final_buffer = timesteps % 2;
+   printf("Total time to run simulation %0.6f seconds, final location %f %f\n", 
+          tdiff(&start, &end), 
+          planets[final_buffer][nplanets-1].x, 
+          planets[final_buffer][nplanets-1].y);
+
+   // Free both buffers
+   free(planets[0]);
+   free(planets[1]);
+   free(massProducts);
 
    return 0;   
 }
