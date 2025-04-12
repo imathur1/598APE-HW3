@@ -16,6 +16,23 @@ To clean existing build artifacts run:
 make clean
 ```
 
+To compile the program with profiling on run:
+```bash
+make -j PROFILE=1
+```
+
+To run the tests to check for correctness:
+```bash
+make test
+./run_tests.sh
+```
+
+If compiled with profiling, running the program will output a `my_profile.prof` file which can be visualized by running:
+```bash
+make view-profile
+```
+
+
 This program assumes the following are installed on your machine:
 * A working C compiler (g++ is assumed in the Makefile)
 * make
@@ -35,3 +52,32 @@ In particular, consider speeding up simple run like the following (which runs ~6
 ```
 
 Exact bitwise reproducibility is not required, but approximate correctness (within a reasonable region of the final location).
+
+# Optimizations
+A full analysis can be found in our paper, `Mini_Paper_3__Nbody.pdf. Our charts were generated in analysis.py using the following commands:
+1. Install pip:
+   ```bash
+   sudo apt install python3-pip
+   ```
+2. Install matplotlib:
+    ```bash
+    pip install matplotlib
+    ```
+3. Run the analysis:
+    ```bash
+    python analysis.py
+    ```
+
+You can run our optimizations with the following commands:
+1. Checkout commit hash:
+   ```bash
+   git checkout <hash>
+   ```
+2. Recompile program:
+    ```bash
+    make clean && make
+    ```
+3. Run simulation:
+    ```bash
+    ./main.exe 1000 5000
+    ```

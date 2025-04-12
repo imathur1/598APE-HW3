@@ -79,6 +79,16 @@ void simulation_serial(Planet* planets[2], int nplanets, int timesteps, double d
          planets[next][i].x += dt * planets[next][i].vx;
          planets[next][i].y += dt * planets[next][i].vy;
       }
+
+      #if PRINT_STEPS
+          if (t < N) {
+             printf("x: %0.32g y: %0.32g vx: %0.32g vy: %0.32g\n", 
+                    planets[next][nplanets-1].x, 
+                    planets[next][nplanets-1].y, 
+                    planets[next][nplanets-1].vx, 
+                    planets[next][nplanets-1].vy);
+          }
+      #endif
    }
 
    free(massProducts);
@@ -146,6 +156,16 @@ void simulation_parallel(Planet* planets[2], int nplanets, int timesteps, double
          planets[next][i].x += dt * planets[next][i].vx;
          planets[next][i].y += dt * planets[next][i].vy;
       }
+
+      #if PRINT_STEPS
+          if (t < N) {
+             printf("x: %0.32g y: %0.32g vx: %0.32g vy: %0.32g\n", 
+                    planets[next][nplanets-1].x, 
+                    planets[next][nplanets-1].y, 
+                    planets[next][nplanets-1].vx, 
+                    planets[next][nplanets-1].vy);
+          }
+      #endif
    }
 
    free(massProducts);
