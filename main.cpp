@@ -20,6 +20,7 @@ float tdiff(struct timeval *start, struct timeval *end) {
 }
 
 struct Planet {
+   double mass;
    double x;
    double y;
    double vx;
@@ -47,12 +48,12 @@ double randomDouble()
    return ((next << 27) + next2) / (double)(1LL << 53);
 }
 
-void simulation_serial(Planet* planets, double* planetMass, int nplanets, int timesteps, double dt) {
+void simulation_serial(Planet* planets, int nplanets, int timesteps, double dt) {
    // Precompute the mass products since mass does not change over time
    double* massProducts = (double*)malloc(sizeof(double) * nplanets * nplanets);
    for (int i = 0; i < nplanets; ++i) {
-      for (int j = i; j < nplanets; ++j) {
-         double massProduct = planetMass[i] * planetMass[j];
+      for (int j = i + 1; j < nplanets; ++j) {
+         double massProduct = planets[i].mass * planets[j].mass;
          massProducts[i * nplanets + j] = massProduct * massProduct * massProduct;
       }
    }
@@ -89,7 +90,7 @@ void simulation_serial(Planet* planets, double* planetMass, int nplanets, int ti
    free(massProducts);
 }
 
-void simulation_parallel(Planet* planets, double* planetMass, int nplanets, int timesteps, double dt) {
+void simulation_parallel(Planet* planets, int nplanets, int timesteps, double dt) {
    int chunk_size = sqrt(nplanets) + 1; 
    int nthreads = omp_get_max_threads();
 
@@ -97,8 +98,8 @@ void simulation_parallel(Planet* planets, double* planetMass, int nplanets, int 
    double* massProducts = (double*)malloc(sizeof(double) * nplanets * nplanets);
    #pragma omp parallel for schedule(dynamic, chunk_size)
    for (int i = 0; i < nplanets; ++i) {
-      for (int j = i; j < nplanets; ++j) {
-         double massProduct = planetMass[i] * planetMass[j];
+      for (int j = i + 1; j < nplanets; ++j) {
+         double massProduct = planets[i].mass * planets[j].mass;
          massProducts[i * nplanets + j] = massProduct * massProduct * massProduct;
       }
    }
@@ -181,12 +182,10 @@ int main(int argc, const char** argv){
    dt = 0.001;
    G = 6.6743;
 
-   Planet* planets = (Planet*)malloc(sizeof(Planet) * nplanets);
-   double* planetMass = (double*)malloc(nplanets * sizeof(double));
-   
+   Planet* planets = (Planet*)malloc(sizeof(Planet) * nplanets);   
    double scale = pow(1 + nplanets, 0.4);
    for (int i=0; i<nplanets; ++i) {
-      planetMass[i] = randomDouble() * 10 + 0.2;
+      planets[i].mass = randomDouble() * 10 + 0.2;
       planets[i].x = ( randomDouble() - 0.5 ) * 100 * scale;
       planets[i].y = ( randomDouble() - 0.5 ) * 100 * scale;
       planets[i].vx = randomDouble() * 5 - 2.5;
@@ -201,9 +200,9 @@ int main(int argc, const char** argv){
    gettimeofday(&start, NULL);
 
    if (nplanets >= PARALLEL_THRESHOLD) {
-      simulation_parallel(planets, planetMass, nplanets, timesteps, dt);
+      simulation_parallel(planets, nplanets, timesteps, dt);
    } else {
-      simulation_serial(planets, planetMass, nplanets, timesteps, dt);
+      simulation_serial(planets, nplanets, timesteps, dt);
    }
 
    gettimeofday(&end, NULL);
