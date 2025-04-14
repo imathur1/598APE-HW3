@@ -20,7 +20,6 @@ float tdiff(struct timeval *start, struct timeval *end) {
 }
 
 struct Planet {
-   double mass;
    double x;
    double y;
    double vx;
@@ -48,45 +47,41 @@ double randomDouble()
    return ((next << 27) + next2) / (double)(1LL << 53);
 }
 
-void simulation_serial(Planet* planets[2], int nplanets, int timesteps, double dt) {
+void simulation_serial(Planet* planets, double* planetMass, int nplanets, int timesteps, double dt) {
    // Precompute the mass products since mass does not change over time
    double* massProducts = (double*)malloc(sizeof(double) * nplanets * nplanets);
-
-   for (int i = 0; i < nplanets; i++) {
-      for (int j = i; j < nplanets; j++) {
-         double massProduct = planets[0][i].mass * planets[0][j].mass;
+   for (int i = 0; i < nplanets; ++i) {
+      for (int j = i; j < nplanets; ++j) {
+         double massProduct = planetMass[i] * planetMass[j];
          massProducts[i * nplanets + j] = massProduct * massProduct * massProduct;
       }
    }
 
-   for (int t = 0; t < timesteps; t++) {
-      int current = t % 2;
-      int next = (t + 1) % 2;
-      memcpy(planets[next], planets[current], nplanets * sizeof(Planet));
-      for (int i = 0; i < nplanets; i++) {
-         for (int j = i; j < nplanets; j++) {
-               double dx = planets[current][j].x - planets[current][i].x;
-               double dy = planets[current][j].y - planets[current][i].y;
-               double distSqr = dx*dx + dy*dy + 0.0001;
-               double invDist3 = massProducts[i * nplanets + j] / (distSqr * sqrt(distSqr));
-               planets[next][i].vx += dt * dx * invDist3;
-               planets[next][i].vy += dt * dy * invDist3;
-               if (j != i) {
-                  planets[next][j].vx += dt * -dx * invDist3;
-                  planets[next][j].vy += dt * -dy * invDist3;
-               }
+   for (int t = 0; t < timesteps; ++t) {
+      for (int i = 0; i < nplanets; ++i) {
+         for (int j = i + 1; j < nplanets; ++j) {
+            double dx = planets[j].x - planets[i].x;
+            double dy = planets[j].y - planets[i].y;
+            double distSqr = dx*dx + dy*dy + 0.0001;
+            double invDist3 = dt * massProducts[i * nplanets + j] / (distSqr * sqrt(distSqr));
+            double vxDiff = dx * invDist3;
+            double vyDiff = dy * invDist3;
+            planets[i].vx += vxDiff;
+            planets[i].vy += vyDiff;
+            planets[j].vx -= vxDiff;
+            planets[j].vy -= vyDiff;
          }
-         planets[next][i].x += dt * planets[next][i].vx;
-         planets[next][i].y += dt * planets[next][i].vy;
+         planets[i].x += dt * planets[i].vx;
+         planets[i].y += dt * planets[i].vy;
       }
 
       #if PRINT_STEPS
           if (t < N) {
              printf("x: %0.32g y: %0.32g vx: %0.32g vy: %0.32g\n", 
-                    planets[next][nplanets-1].x, 
-                    planets[next][nplanets-1].y, 
-                    planets[next][nplanets-1].vx, 
-                    planets[next][nplanets-1].vy);
+                    planets[nplanets-1].x, 
+                    planets[nplanets-1].y, 
+                    planets[nplanets-1].vx, 
+                    planets[nplanets-1].vy);
           }
       #endif
    }
@@ -94,83 +89,82 @@ void simulation_serial(Planet* planets[2], int nplanets, int timesteps, double d
    free(massProducts);
 }
 
-void simulation_parallel(Planet* planets[2], int nplanets, int timesteps, double dt) {
+void simulation_parallel(Planet* planets, double* planetMass, int nplanets, int timesteps, double dt) {
+   int chunk_size = sqrt(nplanets) + 1; 
+   int nthreads = omp_get_max_threads();
+
    // Precompute the mass products since mass does not change over time
    double* massProducts = (double*)malloc(sizeof(double) * nplanets * nplanets);
-   
-   #pragma omp parallel for schedule(dynamic)
-   for (int i = 0; i < nplanets; i++) {
-      for (int j = i; j < nplanets; j++) {
-         double massProduct = planets[0][i].mass * planets[0][j].mass;
+   #pragma omp parallel for schedule(dynamic, chunk_size)
+   for (int i = 0; i < nplanets; ++i) {
+      for (int j = i; j < nplanets; ++j) {
+         double massProduct = planetMass[i] * planetMass[j];
          massProducts[i * nplanets + j] = massProduct * massProduct * massProduct;
       }
    }
 
-   int nthreads = omp_get_max_threads();
-   std::vector<double> X(nplanets, 0.0);
-   std::vector<double> Y(nplanets, 0.0);
-   for (int t = 0; t < timesteps; ++t) {
-      int current = t % 2;
-      int next = (t + 1) % 2;
-      memcpy(planets[next], planets[current], nplanets * sizeof(Planet));
+   double** thread_VX = new double*[nthreads];
+   double** thread_VY = new double*[nthreads];
+   for (int tid = 0; tid < nthreads; tid++) {
+      thread_VX[tid] = (double*)malloc(nplanets * sizeof(double));
+      thread_VY[tid] = (double*)malloc(nplanets * sizeof(double));
+   }
 
-      // Allocate thread-local accumulators
-      std::vector< std::vector<double> > VX(nthreads, std::vector<double>(nplanets, 0.0));
-      std::vector< std::vector<double> > VY(nthreads, std::vector<double>(nplanets, 0.0));
+   for (int t = 0; t < timesteps; ++t) {
+      #pragma omp parallel
+      {
+         int tid = omp_get_thread_num();
+         memset(thread_VX[tid], 0, nplanets * sizeof(double));
+         memset(thread_VY[tid], 0, nplanets * sizeof(double));
+      }
 
       #pragma omp parallel
       {
          int tid = omp_get_thread_num();
-         #pragma omp for schedule(dynamic)
+         #pragma omp for schedule(dynamic, chunk_size)
          for (int i = 0; i < nplanets; ++i) {
-            for (int j = i; j < nplanets; ++j) {
-               double dx = planets[current][j].x - planets[current][i].x;
-               double dy = planets[current][j].y - planets[current][i].y;
+            for (int j = i + 1; j < nplanets; ++j) {
+               double dx = planets[j].x - planets[i].x;
+               double dy = planets[j].y - planets[i].y;
                double distSqr = dx * dx + dy * dy + 0.0001;
                double invDist3 = massProducts[i * nplanets + j] / (distSqr * sqrt(distSqr));
-               
-               VX[tid][i] += dt * dx * invDist3;
-               VY[tid][i] += dt * dy * invDist3;
-               if (j != i) {
-                  VX[tid][j] += dt * -dx * invDist3;
-                  VY[tid][j] += dt * -dy * invDist3;
-               }
+               double vxDiff = dx * invDist3;
+               double vyDiff = dy * invDist3;
+               thread_VX[tid][i] += vxDiff;
+               thread_VY[tid][i] += vyDiff;
+               thread_VX[tid][j] -= vxDiff;
+               thread_VY[tid][j] -= vyDiff;
             }
          }
       }
 
       // Combine thread-local results
+      #pragma omp parallel for schedule(static)
       for (int i = 0; i < nplanets; ++i) {
-         X[i] = 0;
-         Y[i] = 0;
+         double vxTotal = 0.0, vyTotal = 0.0;
          for (int tid = 0; tid < nthreads; ++tid) {
-            X[i] += VX[tid][i];
-            Y[i] += VY[tid][i];
+            vxTotal += thread_VX[tid][i];
+            vyTotal += thread_VY[tid][i];
          }
-      }
-
-      // Update positions and velocities
-      for (int i = 0; i < nplanets; ++i) {
-         planets[next][i].vx += X[i];
-         planets[next][i].vy += Y[i];
-         planets[next][i].x += dt * planets[next][i].vx;
-         planets[next][i].y += dt * planets[next][i].vy;
+         planets[i].vx += dt * vxTotal;
+         planets[i].vy += dt * vyTotal;
+         planets[i].x += dt * planets[i].vx;
+         planets[i].y += dt * planets[i].vy;
       }
 
       #if PRINT_STEPS
           if (t < N) {
              printf("x: %0.32g y: %0.32g vx: %0.32g vy: %0.32g\n", 
-                    planets[next][nplanets-1].x, 
-                    planets[next][nplanets-1].y, 
-                    planets[next][nplanets-1].vx, 
-                    planets[next][nplanets-1].vy);
+                    planets[nplanets-1].x, 
+                    planets[nplanets-1].y, 
+                    planets[nplanets-1].vx, 
+                    planets[nplanets-1].vy);
           }
       #endif
    }
 
    free(massProducts);
 }
-
 
 int nplanets;
 int timesteps;
@@ -187,19 +181,16 @@ int main(int argc, const char** argv){
    dt = 0.001;
    G = 6.6743;
 
-   // Allocate two blocks of memory for double buffering
-   Planet* planets[2];
-   planets[0] = (Planet*)malloc(sizeof(Planet) * nplanets);
-   planets[1] = (Planet*)malloc(sizeof(Planet) * nplanets);
+   Planet* planets = (Planet*)malloc(sizeof(Planet) * nplanets);
+   double* planetMass = (double*)malloc(nplanets * sizeof(double));
    
-   // Initialize first buffer
    double scale = pow(1 + nplanets, 0.4);
-   for (int i=0; i<nplanets; i++) {
-      planets[0][i].mass = randomDouble() * 10 + 0.2;
-      planets[0][i].x = ( randomDouble() - 0.5 ) * 100 * scale;
-      planets[0][i].y = ( randomDouble() - 0.5 ) * 100 * scale;
-      planets[0][i].vx = randomDouble() * 5 - 2.5;
-      planets[0][i].vy = randomDouble() * 5 - 2.5;
+   for (int i=0; i<nplanets; ++i) {
+      planetMass[i] = randomDouble() * 10 + 0.2;
+      planets[i].x = ( randomDouble() - 0.5 ) * 100 * scale;
+      planets[i].y = ( randomDouble() - 0.5 ) * 100 * scale;
+      planets[i].vx = randomDouble() * 5 - 2.5;
+      planets[i].vy = randomDouble() * 5 - 2.5;
    }
 
    #if PROFILE
@@ -210,9 +201,9 @@ int main(int argc, const char** argv){
    gettimeofday(&start, NULL);
 
    if (nplanets >= PARALLEL_THRESHOLD) {
-      simulation_parallel(planets, nplanets, timesteps, dt);
+      simulation_parallel(planets, planetMass, nplanets, timesteps, dt);
    } else {
-      simulation_serial(planets, nplanets, timesteps, dt);
+      simulation_serial(planets, planetMass, nplanets, timesteps, dt);
    }
 
    gettimeofday(&end, NULL);
@@ -221,14 +212,11 @@ int main(int argc, const char** argv){
       ProfilerStop();
    #endif
 
-   int final = timesteps % 2;
    printf("Total time to run simulation %0.6f seconds, final location %f %f\n", 
-          tdiff(&start, &end), 
-          planets[final][nplanets-1].x, 
-          planets[final][nplanets-1].y);
-
-   free(planets[0]);
-   free(planets[1]);
+         tdiff(&start, &end), 
+         planets[nplanets-1].x, 
+         planets[nplanets-1].y);
+   free(planets);
 
    return 0;   
 }
