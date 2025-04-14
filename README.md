@@ -54,7 +54,7 @@ In particular, consider speeding up simple run like the following (which runs ~6
 Exact bitwise reproducibility is not required, but approximate correctness (within a reasonable region of the final location).
 
 # Optimizations
-A full analysis can be found in our paper, `Mini_Paper_3__Nbody.pdf. Our charts were generated in analysis.py using the following commands:
+A full analysis can be found in our paper, `Mini_Paper_3__Nbody.pdf`. Our charts were generated in analysis.py using the following commands:
 1. Install pip:
    ```bash
    sudo apt install python3-pip
